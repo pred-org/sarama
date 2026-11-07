@@ -979,6 +979,7 @@ func (child *partitionConsumer) IsPaused() bool {
 }
 
 type brokerConsumer struct {
+	fetchSession     incrementalFetchSession // owned by subscriptionConsumer only
 	consumer         *consumer
 	broker           *Broker
 	input            chan *brokerSubscription
@@ -1068,6 +1069,7 @@ func (bc *brokerConsumer) subscriptionManager() {
 // subscriptionConsumer ensures we will get nil right away if no new subscriptions is available
 // this is the main loop that fetches Kafka messages
 func (bc *brokerConsumer) subscriptionConsumer() {
+	defer bc.closeFetchSession()
 	for newSubscriptions := range bc.newSubscriptions {
 		bc.updateSubscriptions(newSubscriptions)
 
@@ -1317,10 +1319,27 @@ func (bc *brokerConsumer) fetchNewMessages() (*FetchResponse, error) {
 
 	// avoid to fetch when there is no block
 	if len(request.blocks) == 0 {
+		bc.closeFetchSession()
 		return nil, nil
 	}
-
-	return bc.broker.Fetch(request)
+	if !bc.consumer.conf.Consumer.Fetch.IncrementalSessions || request.Version < 7 {
+		return bc.broker.Fetch(request)
+	}
+	bc.fetchSession.prepare(request)
+	response, err := bc.broker.Fetch(request)
+	if err != nil {
+		bc.fetchSession = incrementalFetchSession{} // connection state is now unknown
+		return nil, err                             // existing abort path redispatches without advancing offsets
+	}
+	if !bc.fetchSession.accept(request, response) {
+		Logger.Printf("consumer/broker/%d resetting fetch session after response error %d\n", bc.broker.ID(), response.ErrorCode)
+		if response.ErrorCode != 0 && KError(response.ErrorCode) != ErrFetchSessionIDNotFound && KError(response.ErrorCode) != ErrInvalidFetchSessionEpoch {
+			bc.fetchSession = incrementalFetchSession{}
+			return nil, KError(response.ErrorCode)
+		}
+		return nil, nil // existing loop backs off before a full retry
+	}
+	return response, nil
 }
 
 func (bc *brokerConsumer) stopConsuming() {

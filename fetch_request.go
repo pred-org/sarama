@@ -205,7 +205,7 @@ func (r *FetchRequest) decode(pd packetDecoder, version int16) (err error) {
 	if err != nil {
 		return err
 	}
-	if topicCount == 0 {
+	if topicCount == 0 && r.Version < 7 {
 		return nil
 	}
 	r.blocks = make(map[string]map[int32]*fetchRequestBlock)
