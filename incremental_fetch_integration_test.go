@@ -28,7 +28,11 @@ func TestIncrementalFetchIntegration(t *testing.T) {
 	if err = admin.CreateTopic(topic, &TopicDetail{NumPartitions: 3, ReplicationFactor: 1}, false); err != nil {
 		t.Fatal(err)
 	}
-	defer admin.DeleteTopic(topic)
+	defer func() {
+		if err := admin.DeleteTopic(topic); err != nil {
+			t.Errorf("delete test topic: %v", err)
+		}
+	}()
 	producer, err := NewSyncProducer([]string{addr}, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -94,12 +98,18 @@ func TestIncrementalFetchIntegration(t *testing.T) {
 	}
 	defer consumer.Close()
 	pcs := make([]PartitionConsumer, 3)
+	defer func() {
+		for _, pc := range pcs {
+			if pc != nil {
+				_ = pc.Close()
+			}
+		}
+	}()
 	for p := range pcs {
 		pcs[p], err = consumer.ConsumePartition(topic, int32(p), 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer pcs[p].Close()
 	}
 	for p, pc := range pcs {
 		for n := 0; n < 10; n++ {

@@ -1281,9 +1281,8 @@ func (bc *brokerConsumer) fetchNewMessages() (*FetchResponse, error) {
 	// Version 7 adds incremental fetch request support.
 	if bc.consumer.conf.Version.IsAtLeast(V1_1_0_0) {
 		request.Version = 7
-		// We do not currently implement KIP-227 FetchSessions. Setting the id to 0
-		// and the epoch to -1 tells the broker not to generate as session ID we're going
-		// to just ignore anyway.
+		// Preserve legacy full fetches by default. When enabled below,
+		// fetchSession.prepare replaces these fields with session metadata.
 		request.SessionID = 0
 		request.SessionEpoch = -1
 	}
