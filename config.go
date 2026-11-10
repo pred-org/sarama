@@ -387,6 +387,8 @@ type Config struct {
 		// Fetch is the namespace for controlling how many bytes are retrieved by any
 		// given request.
 		Fetch struct {
+			// IncrementalSessions enables KIP-227 on Kafka 1.1+; false preserves full fetches.
+			IncrementalSessions bool
 			// The minimum number of message bytes to fetch in a request - the broker
 			// will wait until at least this many are available. The default is 1,
 			// as 0 causes the consumer to spin when no messages are available.
@@ -916,4 +918,10 @@ func validateGroupInstanceId(id string) error {
 		return ConfigurationError(fmt.Sprintf(`Group instance id %s is illegal, it contains a character other than, '.', '_' and '-'`, id))
 	}
 	return nil
+}
+
+// SetIncrementalFetchSessions enables optional KIP-227 consumer fetch sessions.
+// The method allows wrappers to detect support without requiring a fork at compile time.
+func (c *Config) SetIncrementalFetchSessions(enabled bool) {
+	c.Consumer.Fetch.IncrementalSessions = enabled
 }
